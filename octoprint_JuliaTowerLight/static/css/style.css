@@ -1,0 +1,21 @@
+#JuliaTowerLight_status, #JuliaTowerLight_status:hover, 
+#JuliaTowerLight_status:active, #JuliaTowerLight_status:focus {
+	border-radius: 4px;
+	font-size: 0 !important;
+	background-color: #00b6ff !important;
+	background-image: none !important;
+	width: 10px;
+	height: auto;
+}
+
+#JuliaTowerLight_status.red {
+	background-color: #ff0000 !important;
+}
+
+#JuliaTowerLight_status.green {
+	background-color: #00ff00 !important;
+}
+
+#JuliaTowerLight_status.yellow {
+	background-color: #ffbb00 !important;
+}
