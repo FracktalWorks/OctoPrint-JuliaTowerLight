@@ -212,7 +212,7 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
 
 
 __plugin_name__ = "Julia Tower Light"
-__plugin_version__ = "1.0.0"
+__plugin_version__ = "0.0.1"
 
 
 def __plugin_load__():
