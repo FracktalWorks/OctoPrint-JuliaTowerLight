@@ -1,0 +1,49 @@
+<div id="settings_JuliaTowerLight">
+    <h3>{{ _('Julia Tower Light') }}</h3>
+    <hr/>
+
+    <form class="form-horizontal">
+        <div class="control-group">
+            <label class="control-label">{{ _('Tower Light') }}</label>
+            <div class="controls">
+                <select class="select-mini" data-bind="value: Config.tower_enabled">
+                    <option value=0>{{ _('Disabled') }}</option>
+                    <option value=1>{{ _('Enabled') }}</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-group" data-bind="visible: towerEnabled()">
+            <label class="control-label">{{ _('Strobe') }}</label>
+            <div class="controls">
+                <select class="select-mini" data-bind="value: Config.strobe">
+                    <option value=0>{{ _('Disabled') }}</option>
+                    <option value=1>{{ _('Enabled') }}</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-group" data-bind="visible: (towerEnabled() && strobeEnabled())">
+            <label class="control-label">{{ _('ON delay (ms)') }}</label>
+            <div class="controls">
+                <input type="number" step="50" min="50" max="5000" class="input-mini text-right" data-bind="value: Config.delay_on">
+            </div>
+        </div>
+
+        <div class="control-group" data-bind="visible: (towerEnabled() && strobeEnabled())">
+            <label class="control-label">{{ _('OFF delay (ms)') }}</label>
+            <div class="controls">
+                <input type="number" step="50" min="50" max="5000" class="input-mini text-right" data-bind="value: Config.delay_off">
+            </div>
+        </div>
+
+        <hr/>
+
+        <div class="control-group" data-bind="visible: towerEnabled()">
+            <label class="control-label" style="display: hidden"></label>
+            <div class="controls">
+                <span class="" id="settings_machine_state"></span>
+            </div>
+        </div>
+    </form>
+</div>

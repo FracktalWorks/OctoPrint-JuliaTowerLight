@@ -2,18 +2,45 @@
 from __future__ import absolute_import
 
 import octoprint.plugin
-from octoprint.events import Events
+# from octoprint.events import Events
 import RPi.GPIO as GPIO
-# from time import sleep
+from time import sleep
 # from flask import jsonify
+import threading
 
-'''
-Uses Pi's internal pullups.
 
-GPIO states
-Open    - HIGH
-Closed  - LOW
-'''
+class StrobeLED(threading.Thread):
+    DELAY_ON = 100
+    DELAY_OFF = 200
+
+    def __init__(self, pin, delay_on=DELAY_ON, delay_off=DELAY_OFF, fn_on=None, fn_off=None):
+        super(StrobeLED, self).__init__()
+        self.pin = pin
+        self.delay_on = delay_on
+        self.delay_off = delay_off
+        self._stop_event = threading.Event()
+        self.fn_on = fn_on
+        self.fn_off = fn_off
+
+    def stop(self):
+        self._stop_event.set()
+
+    def stopped(self):
+        return self._stop_event.is_set()
+
+    def run(self):
+        while not self.stopped():
+            try:
+                GPIO.output(self.pin, GPIO.HIGH)
+                if self.fn_on:
+                    self.fn_on()
+                sleep(self.delay_on / 1000.0)
+                GPIO.output(self.pin, GPIO.LOW)
+                if self.fn_off:
+                    self.fn_off()
+                sleep(self.delay_off / 1000.0)
+            except:
+                pass
 
 
 class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
@@ -23,17 +50,46 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
                             octoprint.plugin.AssetPlugin):
 
     '''
+    GPIO pin mapping
             BCM   BOARD
-    PIN_R   19    35
-    PIN_Y   16    36
-    PIN_G   20    38
-    PIN_B   21    40
     '''
+    PIN_R = 19  # 35
+    PIN_Y = 16  # 36
+    PIN_G = 20  # 38
+    PIN_B = 21  # 40
 
-    PIN_R = 19
-    PIN_Y = 16
-    PIN_G = 20
-    PIN_B = 21
+    '''
+    OctoPrint states
+    '''
+    STATE_OFFLINE = "Offline"
+    STATE_PAUSED = "Paused"
+    STATE_PRINTING = "Printing"
+    STATE_OPERATIONAL = "Operational"
+    AVAILABLE_STATES = [STATE_OFFLINE, STATE_PAUSED, STATE_PRINTING, STATE_OPERATIONAL]
+    BLINK_STATES = [STATE_PAUSED, STATE_PRINTING, STATE_OPERATIONAL]
+
+    '''
+    Mapping
+    '''
+    MAP_LED_STATE = {
+        STATE_OFFLINE: PIN_R,
+        STATE_PAUSED: PIN_Y,
+        STATE_PRINTING: PIN_G,
+        STATE_OPERATIONAL: PIN_B
+    }
+
+    MAP_UI_STATE = {
+        STATE_OFFLINE: "red",
+        STATE_PAUSED: "yellow",
+        STATE_PRINTING: "green",
+        STATE_OPERATIONAL: "blue"
+    }
+
+    '''
+    Global variables
+    '''
+    __thread_strobe = None
+    __machine_state = None
 
     '''
     Logging
@@ -49,11 +105,42 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
     '''
     @property
     def tower_enabled(self):
-        return int(self._settings.get(["tower_enabled"]))
+        return self._settings.get_boolean(["tower_enabled"])
+
+    @property
+    def strobe(self):
+        return self._settings.get_boolean(["strobe"])
+
+    @property
+    def delay_on(self):
+        return self._settings.get_int(["delay_on"])
+
+    @property
+    def delay_off(self):
+        return self._settings.get_int(["delay_off"])
+
+    '''
+    Thread
+    '''
+
+    def kill_thread_strobe(self):
+        if self.__thread_strobe is not None and self.__thread_strobe.isAlive():
+            self.__thread_strobe.stop()
+        self.__thread_strobe = None
+
+    def start_thread_strobe(self, pin):
+        try:
+            self.kill_thread_strobe()
+            self.__thread_strobe = StrobeLED(pin, self.delay_on, self.delay_off, self.strobe_fn_on, self.strobe_fn_off)
+            self.__thread_strobe.start()
+        except Exception as e:
+            self.log_error(e)
 
     '''
     Helpers
     '''
+    def send_machine_state(self, color):
+        self._plugin_manager.send_plugin_message(self._identifier, dict(type="machine_state", machine_state=str(color)))
 
     def set_light_state(self, pin, state=GPIO.LOW):
         try:
@@ -67,8 +154,42 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
         self.set_light_state(self.PIN_G)
         self.set_light_state(self.PIN_B)
 
-    def navbar_status(self, color):
-        self._plugin_manager.send_plugin_message(self._identifier, dict(type="navbar_status", color=str(color)))
+    def handle_machine_state(self):
+        try:
+            self.kill_thread_strobe()
+        except Exception as e:
+            self.log_error(e)
+        self.reset_lights()
+
+        if self.__machine_state not in self.AVAILABLE_STATES:
+            return
+
+        # self._plugin_manager.send_plugin_message(self._identifier, dict(type="event", event=str(self.__machine_state)))
+
+        # if self.__machine_state == self.STATE_OFFLINE:
+        #     self.set_light_state(self.PIN_R, GPIO.HIGH)
+        # elif self.__machine_state == self.STATE_PAUSED:
+        #     self.set_light_state(self.PIN_Y, GPIO.HIGH)
+        # elif self.__machine_state == self.STATE_PRINTING:
+        #     self.set_light_state(self.PIN_G, GPIO.HIGH)
+        # elif self.__machine_state == self.STATE_OPERATIONAL:
+        #     self.set_light_state(self.PIN_G, GPIO.HIGH)
+
+        if self.strobe and self.__machine_state in self.BLINK_STATES:
+            self.log_info("Strobe " + self.__machine_state)
+            self.start_thread_strobe(self.MAP_LED_STATE[self.__machine_state])
+        else:
+            self.log_info("Static " + self.__machine_state)
+            self.set_light_state(self.MAP_LED_STATE[self.__machine_state], GPIO.HIGH)
+            self.send_machine_state(self.MAP_UI_STATE[self.__machine_state])
+
+    def strobe_fn_on(self):
+        # self.log_info("strobe_fn_on")
+        self.send_machine_state(self.MAP_UI_STATE[self.__machine_state])
+
+    def strobe_fn_off(self):
+        # self.log_info("strobe_fn_off")
+        self.send_machine_state("")
 
     '''
     Sensor Initialization
@@ -80,15 +201,8 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
             pass
 
     def _gpio_setup(self):
-        self.log_info("_gpio_setup")
         try:
-            # mode = GPIO.getmode()
-            # if mode is None or mode is GPIO.UNKNOWN:
-            #     GPIO.setmode(GPIO.BCM)
-            #     mode = GPIO.getmode()
             GPIO.setmode(GPIO.BCM)
-
-            # self._gpio_pinout(mode)
 
             self._gpio_clean_pin(self.PIN_R)
             self._gpio_clean_pin(self.PIN_Y)
@@ -111,7 +225,7 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
             # self.popup_error(e)
 
     '''
-    Callbacks
+    Plugin Management
     '''
     def on_after_startup(self):
         self.log_info("JuliaTowerLight plugin started")
@@ -119,50 +233,36 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
 
     def on_event(self, event, payload):
         # self._plugin_manager.send_plugin_message(self._identifier, dict(type="event", event=str(event)))
-        self.reset_lights()
+        if self.__machine_state == self._printer.get_state_string():
+            return
+        self.__machine_state = self._printer.get_state_string()
+        self.handle_machine_state()
 
-        status = self._printer.get_state_string()
+    def initialize(self):
+        self.log_info("Running RPi.GPIO version '{0}'".format(GPIO.VERSION))
+        if GPIO.VERSION < "0.6":       # Need at least 0.6 for edge detection
+            raise Exception("RPi.GPIO must be greater than 0.6")
+        GPIO.setwarnings(False)        # Disable GPIO warnings
 
-        # Red
-        # if event in (
-        #     Events.ERROR,
-        #     Events.DISCONNECTED,
-        #     Events.PRINT_FAILED,
-        # ):
-        if status == "Offline":
-            self.set_light_state(self.PIN_R, GPIO.HIGH)
-            self.navbar_status("red")
+    def on_settings_save(self, data):
+        octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+        self._gpio_setup()
+        self.handle_machine_state()
 
-        # Yellow
-        # elif event in (
-        #     Events.CONNECTED,
-        #     Events.PRINT_PAUSED,
-        #     Events.PRINT_DONE,
-        #     Events.PRINT_CANCELLED
-        # ):
-        elif status == "Paused":
-            # else:
-            self.set_light_state(self.PIN_Y, GPIO.HIGH)
-            self.navbar_status("yellow")
+    def get_assets(self):
+        return dict(
+            js=["js/JuliaTowerLight_navbar.js", "js/JuliaTowerLight_settings.js"],
+            css=["css/style.css"]
+        )
 
-        # Green
-        # elif event in (
-        #     Events.PRINT_STARTED,
-        #     Events.PRINT_RESUMED
-        # ):
-        elif status == "Printing":
-            self.set_light_state(self.PIN_G, GPIO.HIGH)
-            self.navbar_status("green")
+    def get_template_configs(self):
+        return [dict(type="navbar", custom_bindings=True), dict(type="settings", custom_bindings=True)]
 
-        # Green
-        # elif event in (
-        #     Events.OP,
-        #     Events.PRINT_RESUMED
-        # ):
-        elif status == "Operational":
-            self.set_light_state(self.PIN_G, GPIO.HIGH)
-            self.navbar_status("green")
-        
+    def get_settings_defaults(self):
+        return dict(tower_enabled=True,
+                    strobe=True,
+                    delay_on=100,
+                    delay_off=1000)
 
     '''
     Update Management
@@ -170,7 +270,7 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
     def get_update_information(self):
         return dict(
             octoprint_filament=dict(
-                displayName="Julia 2018 Filament Sensor",
+                displayName="Julia Tower Light",
                 displayVersion=self._plugin_version,
 
                 # version check: github repository
@@ -183,32 +283,6 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
                 pip="https://github.com/FracktalWorks/OctoPrint-JuliaTowerLight/archive/{target_version}.zip"
             )
         )
-
-    '''
-    Plugin Management
-    '''
-    def initialize(self):
-        self.log_info("Running RPi.GPIO version '{0}'".format(GPIO.VERSION))
-        if GPIO.VERSION < "0.6":       # Need at least 0.6 for edge detection
-            raise Exception("RPi.GPIO must be greater than 0.6")
-        GPIO.setwarnings(False)        # Disable GPIO warnings
-    
-    def on_settings_save(self, data):
-        octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
-        self._gpio_setup()
-
-    def get_assets(self):
-        return dict(
-            js=["js/JuliaTowerLight.js"],
-            css=["css/style.css"]
-        )
- 
-    def get_template_configs(self):
-        return [dict(type="navbar", custom_bindings=True)]
-
-    def get_settings_defaults(self):
-        return dict(tower_enabled=True,
-                    )
 
 
 __plugin_name__ = "Julia Tower Light"
