@@ -75,7 +75,7 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
         STATE_OFFLINE: PIN_R,
         STATE_PAUSED: PIN_Y,
         STATE_PRINTING: PIN_G,
-        STATE_OPERATIONAL: PIN_B
+        STATE_OPERATIONAL: PIN_R
     }
 
     MAP_UI_STATE = {
@@ -261,8 +261,8 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
     def get_settings_defaults(self):
         return dict(tower_enabled=True,
                     strobe=True,
-                    delay_on=100,
-                    delay_off=1000)
+                    delay_on=0,
+                    delay_off=0)
 
     '''
     Update Management
