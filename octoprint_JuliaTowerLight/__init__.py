@@ -274,13 +274,11 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
             octoprint_filament=dict(
                 displayName="Julia Tower Light",
                 displayVersion=self._plugin_version,
-
                 # version check: github repository
                 type="github_release",
                 user="FracktalWorks",
                 repo="OctoPrint-JuliaTowerLight",
                 current=self._plugin_version,
-
                 # update method: pip
                 pip="https://github.com/FracktalWorks/OctoPrint-JuliaTowerLight/archive/{target_version}.zip"
             )
