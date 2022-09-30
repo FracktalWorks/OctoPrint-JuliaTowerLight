@@ -7,7 +7,9 @@ import RPi.GPIO as GPIO
 from time import sleep
 # from flask import jsonify
 import threading
-
+from ._version import get_versions
+__version__ = get_versions()['version']
+del get_versions
 
 class StrobeLED(threading.Thread):
     DELAY_ON = 100
@@ -286,7 +288,8 @@ class JuliaTowerLightPlugin(octoprint.plugin.StartupPlugin,
 
 
 __plugin_name__ = "Julia Tower Light"
-__plugin_version__ = "0.0.2"
+__plugin_version__ = __version__
+__plugin_pythoncompat__ = ">=2.7,<4"
 
 
 def __plugin_load__():
